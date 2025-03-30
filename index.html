@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vite + React + TS</title>
+  </head>
+  <body>
+    <!-- Скрытая форма для Netlify -->
+    <form name="service-registration" netlify netlify-honeypot="bot-field" hidden>
+      <input type="text" name="name" />
+      <input type="text" name="phone" />
+      <input type="text" name="car_brand" />
+      <input type="text" name="car_number" />
+      <input type="number" name="mileage" />
+      <input type="date" name="next_service_date" />
+      <input type="date" name="service_date" />
+      <input type="checkbox" name="work_types[]" />
+      <textarea name="additional_work"></textarea>
+    </form>
+    
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
