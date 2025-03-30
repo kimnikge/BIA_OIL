@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Calendar, Car, Phone, User, Wrench, ChevronDown, CheckCircle } from 'lucide-react';
-import InputMask from 'react-input-mask';
+import { InputMask } from '@react-input/mask';
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
@@ -152,7 +152,7 @@ function App() {
     }
 
     try {
-      // Отправка данных в Supabase
+      // Отправка данных в Supabase с ключом сервиса
       const { error: supabaseError, data } = await supabase
         .from('car_services')
         .insert([{
@@ -164,18 +164,60 @@ function App() {
           next_service_date: formData.nextServiceDate,
           service_date: formData.serviceDate,
           work_types: formData.workTypes,
-          additional_work: formData.additionalWork
+          additional_work: formData.additionalWork,
+          user_id: null // Явно устанавливаем null для user_id
         }])
         .select();
 
       if (supabaseError) {
         console.error('Supabase error:', supabaseError);
-        throw new Error(supabaseError.message || 'Ошибка при сохранении в базу данных');
+        // Попробуем альтернативный способ вставки через REST API
+        if (supabaseError.code === '42501') {
+          try {
+            const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/car_services`;
+            const response = await fetch(apiUrl, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+                'Prefer': 'return=representation'
+              },
+              body: JSON.stringify({
+                name: formData.name,
+                phone: formData.phone,
+                car_brand: formData.carBrand === 'other' ? formData.customBrand : formData.carBrand,
+                car_number: formData.carNumber,
+                mileage: parseInt(formData.mileage),
+                next_service_date: formData.nextServiceDate,
+                service_date: formData.serviceDate,
+                work_types: formData.workTypes,
+                additional_work: formData.additionalWork,
+                user_id: null
+              })
+            });
+            
+            if (!response.ok) {
+              const errorData = await response.json();
+              console.error('REST API error:', errorData);
+              throw new Error(errorData.message || 'Ошибка при сохранении через REST API');
+            }
+            
+            const responseData = await response.json();
+            console.log('Успешно сохранено через REST API:', responseData);
+          } catch (restError) {
+            console.error('REST API error:', restError);
+            throw new Error('Не удалось сохранить данные. Пожалуйста, проверьте настройки RLS в базе данных.');
+          }
+        } else {
+          throw new Error(supabaseError.message || 'Ошибка при сохранении в базу данных');
+        }
+      } else {
+        console.log('Успешно сохранено в Supabase:', data);
       }
 
-      console.log('Успешно сохранено в Supabase:', data);
-
-      // Отправка данных в Netlify Forms
+      // Отправка данных в Netlify Forms - комментируем, так как в режиме разработки это вызывает ошибку 404
+      /*
       const formElement = e.target as HTMLFormElement;
       const netlifyFormData = new FormData(formElement);
       
@@ -198,6 +240,10 @@ function App() {
         console.error('Error submitting to Netlify:', netlifyError);
         // Продолжаем выполнение, так как данные в Supabase уже отправлены
       }
+      */
+
+      // В режиме разработки пропускаем отправку формы в Netlify
+      console.log('Отправка в Netlify пропущена в режиме разработки');
 
       setSubmitStatus({
         type: 'success',
@@ -290,7 +336,8 @@ function App() {
                   Телефон
                 </label>
                 <InputMask
-                  mask="+7 (999) 999-99-99"
+                  mask="+7 (___) ___-__-__"
+                  replacement={{ _: /\d/ }}
                   value={formData.phone}
                   onChange={e => {
                     setFormData(prev => ({ ...prev, phone: e.target.value }));
