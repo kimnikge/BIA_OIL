@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Calendar, Car, Phone, User, Wrench, ChevronDown, CheckCircle } from 'lucide-react';
 import { InputMask } from '@react-input/mask';
 import { createClient } from '@supabase/supabase-js';
+import { oilTypes } from './data/oilTypes';
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -26,23 +27,65 @@ const convertToLatin = (str: string): string => {
   ).join('').replace(/[^A-Z0-9]/g, '');
 };
 
+// Добавляем функцию для получения структуры таблицы
+const getTableStructure = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('car_services')
+      .select()
+      .limit(1);
+
+    if (error) {
+      if (error.code === '42P01') { // Table doesn't exist
+        console.error('Table car_services does not exist. Please run the schema.sql script.');
+      } else {
+        console.error('Error fetching table structure:', error);
+      }
+      return;
+    }
+
+    if (data && data[0]) {
+      const columns = Object.keys(data[0]);
+      console.log('Table structure:', columns);
+      
+      // Проверка наличия необходимых колонок
+      const requiredColumns = ['service_date', 'work_types', 'name', 'phone'];
+      const missingColumns = requiredColumns.filter(col => !columns.includes(col));
+      
+      if (missingColumns.length > 0) {
+        console.error('Missing required columns:', missingColumns);
+      }
+      
+      return columns;
+    }
+  } catch (err) {
+    console.error('Failed to get table structure:', err);
+  }
+};
+
+// Обновляем интерфейс в соответствии с данными из БД
 interface FormData {
   name: string;
   phone: string;
   carBrand: string;
   customBrand: string;
   carNumber: string;
-  mileage: string;
-  nextServiceDate: string;
-  serviceDate: string;
-  workTypes: string[];
-  additionalWork: string;
+  current_mileage: string;
+  last_service_date: string;
+  oil_type: string;
+  last_service_mileage: string;
+  recommended_interval: string;
+  master_notes: string;
+  service_date: string;
+  work_types: string[];
+  additional_work: string;
 }
 
 const carBrands = [
-  'Audi', 'BMW', 'Chevrolet', 'Ford', 'Honda', 'Hyundai', 'Kia', 'Lada', 'Lexus', 
-  'Mazda', 'Mercedes-Benz', 'Mitsubishi', 'Nissan', 'Opel', 'Peugeot', 'Renault', 
-  'Skoda', 'Toyota', 'Volkswagen', 'Volvo'
+  'Audi', 'BMW', 'Changan', 'Chery', 'Chevrolet', 'Exeed', 'Ford', 'Geely', 
+  'Great Wall', 'Haval', 'Hongqi', 'Honda', 'Hyundai', 'JAC', 'Kia', 'Lada', 
+  'Lexus', 'Mazda', 'Mercedes-Benz', 'Mitsubishi', 'Nissan', 'Opel', 'Peugeot', 
+  'Renault', 'Skoda', 'Subaru', 'Suzuki', 'Toyota', 'Volkswagen', 'Volvo', 'Zeekr'
 ].sort();
 
 const workTypeOptions = [
@@ -57,11 +100,15 @@ const initialFormData: FormData = {
   carBrand: '',
   customBrand: '',
   carNumber: '',
-  mileage: '',
-  nextServiceDate: '',
-  serviceDate: '',
-  workTypes: [],
-  additionalWork: ''
+  current_mileage: '',
+  last_service_date: '',
+  oil_type: '',
+  last_service_mileage: '',
+  recommended_interval: '',
+  master_notes: '',
+  service_date: '',
+  work_types: [],
+  additional_work: ''
 };
 
 function App() {
@@ -76,6 +123,10 @@ function App() {
     type: 'success' | 'error' | null;
     message: string;
   }>({ type: null, message: '' });
+
+  React.useEffect(() => {
+    getTableStructure();
+  }, []);
 
   const validatePhone = (phone: string) => {
     const digits = phone.replace(/\D/g, '');
@@ -108,7 +159,7 @@ function App() {
 
   const validateDates = () => {
     const today = new Date().toISOString().split('T')[0];
-    if (formData.serviceDate < today) {
+    if (formData.service_date < today) {
       setDateError('Дата ТО не может быть в прошлом');
       return false;
     }
@@ -130,7 +181,7 @@ function App() {
       return false;
     }
 
-    if (!formData.workTypes.length) {
+    if (!formData.work_types.length) {
       setSubmitStatus({
         type: 'error',
         message: 'Пожалуйста, выберите хотя бы один вид работ'
@@ -152,26 +203,30 @@ function App() {
     }
 
     try {
-      // Отправка данных в Supabase с ключом сервиса
+      const submissionData = {
+        name: formData.name,
+        phone: formData.phone,
+        car_brand: formData.carBrand === 'other' ? formData.customBrand : formData.carBrand,
+        car_number: formData.carNumber,
+        current_mileage: parseInt(formData.current_mileage),
+        last_service_date: formData.last_service_date || null,
+        oil_type: formData.oil_type || null,
+        last_service_mileage: parseInt(formData.last_service_mileage) || null,
+        recommended_interval: parseInt(formData.recommended_interval) || null,
+        master_notes: formData.master_notes || null,
+        service_date: formData.service_date,
+        work_types: formData.work_types,
+        additional_work: formData.additional_work,
+        user_id: null
+      };
+
       const { error: supabaseError, data } = await supabase
         .from('car_services')
-        .insert([{
-          name: formData.name,
-          phone: formData.phone,
-          car_brand: formData.carBrand === 'other' ? formData.customBrand : formData.carBrand,
-          car_number: formData.carNumber,
-          mileage: parseInt(formData.mileage),
-          next_service_date: formData.nextServiceDate,
-          service_date: formData.serviceDate,
-          work_types: formData.workTypes,
-          additional_work: formData.additionalWork,
-          user_id: null // Явно устанавливаем null для user_id
-        }])
+        .insert([submissionData])
         .select();
 
       if (supabaseError) {
         console.error('Supabase error:', supabaseError);
-        // Попробуем альтернативный способ вставки через REST API
         if (supabaseError.code === '42501') {
           try {
             const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/car_services`;
@@ -183,18 +238,7 @@ function App() {
                 'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
                 'Prefer': 'return=representation'
               },
-              body: JSON.stringify({
-                name: formData.name,
-                phone: formData.phone,
-                car_brand: formData.carBrand === 'other' ? formData.customBrand : formData.carBrand,
-                car_number: formData.carNumber,
-                mileage: parseInt(formData.mileage),
-                next_service_date: formData.nextServiceDate,
-                service_date: formData.serviceDate,
-                work_types: formData.workTypes,
-                additional_work: formData.additionalWork,
-                user_id: null
-              })
+              body: JSON.stringify(submissionData)
             });
             
             if (!response.ok) {
@@ -276,9 +320,9 @@ function App() {
   const handleWorkTypeChange = (value: string) => {
     setFormData(prev => ({
       ...prev,
-      workTypes: prev.workTypes.includes(value)
-        ? prev.workTypes.filter(type => type !== value)
-        : [...prev.workTypes, value]
+      work_types: prev.work_types.includes(value)
+        ? prev.work_types.filter(type => type !== value)
+        : [...prev.work_types, value]
     }));
   };
 
@@ -290,71 +334,83 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-100 via-white to-gray-200 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-blue-900 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-2xl mx-auto">
-        <div className="bg-white rounded-2xl shadow-2xl p-8 relative overflow-hidden">
+        <div className="bg-white bg-opacity-10 backdrop-blur-lg rounded-3xl shadow-2xl p-8 border border-white border-opacity-20 relative overflow-hidden">
           {showSuccess && (
-            <div className="absolute inset-0 bg-green-50 bg-opacity-90 flex flex-col items-center justify-center z-10 transition-opacity duration-500">
-              <CheckCircle className="w-16 h-16 text-green-500 mb-4" />
-              <h2 className="text-2xl font-bold text-green-700">Успешно!</h2>
-              <p className="text-green-600 mt-2">Ваша запись принята</p>
+            <div className="absolute inset-0 bg-green-500 bg-opacity-20 backdrop-blur-lg flex flex-col items-center justify-center z-10 transition-opacity duration-500">
+              <CheckCircle className="w-16 h-16 text-green-400 mb-4" />
+              <h2 className="text-2xl font-bold text-white">Успешно!</h2>
+              <p className="text-gray-200 mt-2">Ваша запись принята</p>
             </div>
           )}
 
-          <div className="text-center mb-8">
-            <h1 className="text-4xl font-bold text-gray-900 mb-2">B.I.A. Oil</h1>
-            <p className="text-gray-600">Запись на техническое обслуживание</p>
+          <div className="text-center mb-12">
+            <h1 className="text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-600 mb-4">B.I.A. Oil</h1>
+            <div className="h-1 w-24 mx-auto bg-gradient-to-r from-blue-400 to-purple-600 rounded-full mb-2"></div>
+            <p className="text-gray-300 text-lg">Премиальное техническое обслуживание</p>
           </div>
 
           {submitStatus.type && !showSuccess && (
             <div className={`mb-6 p-4 rounded-lg ${
-              submitStatus.type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+              submitStatus.type === 'success' 
+                ? 'bg-green-500 bg-opacity-20 text-green-300' 
+                : 'bg-red-500 bg-opacity-20 text-red-300'
             }`}>
               {submitStatus.message}
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-6" data-netlify="true" name="service-registration">
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-              <div className="relative">
-                <label className="flex items-center text-sm font-medium text-gray-700 mb-1">
+          <form onSubmit={handleSubmit} className="space-y-8" data-netlify="true" name="service-registration">
+            <div className="grid grid-cols-1 gap-8 sm:grid-cols-2">
+              {/* Обновляем стили для каждого поля ввода, используя группировку для эффектов наведения */}
+              <div className="relative group">
+                <label className="flex items-center text-sm font-medium text-gray-300 mb-2 group-hover:text-blue-400 transition-colors duration-300">
                   <User className="w-4 h-4 mr-2" />
                   Имя
                 </label>
-                <input
-                  type="text"
-                  required
-                  value={formData.name}
-                  onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                  className="block w-full rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2.5"
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    required
+                    value={formData.name}
+                    onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                    className="block w-full bg-slate-800 bg-opacity-50 text-white rounded-xl border border-gray-600 group-hover:border-blue-400 p-3 shadow-lg focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50 transition-all duration-300"
+                  />
+                  <div className="absolute bottom-0 left-0 h-0.5 bg-gradient-to-r from-blue-400 to-purple-600 w-0 group-hover:w-full transition-all duration-500"></div>
+                </div>
               </div>
 
-              <div className="relative">
-                <label className="flex items-center text-sm font-medium text-gray-700 mb-1">
+              {/* Применяем аналогичные стили для остальных полей */}
+              <div className="relative group">
+                <label className="flex items-center text-sm font-medium text-gray-300 mb-2 group-hover:text-blue-400 transition-colors duration-300">
                   <Phone className="w-4 h-4 mr-2" />
                   Телефон
                 </label>
-                <InputMask
-                  mask="+7 (___) ___-__-__"
-                  replacement={{ _: /\d/ }}
-                  value={formData.phone}
-                  onChange={e => {
-                    setFormData(prev => ({ ...prev, phone: e.target.value }));
-                    validatePhone(e.target.value);
-                  }}
-                  className={`block w-full rounded-md border ${
-                    phoneError ? 'border-red-500' : 'border-gray-300'
-                  } shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2.5`}
-                  required
-                />
+                <div className="relative">
+                  <InputMask
+                    mask="+7 (___) ___-__-__"
+                    replacement={{ _: /\d/ }}
+                    value={formData.phone}
+                    onChange={e => {
+                      setFormData(prev => ({ ...prev, phone: e.target.value }));
+                      validatePhone(e.target.value);
+                    }}
+                    className={`block w-full bg-slate-800 bg-opacity-50 text-white rounded-xl border ${
+                      phoneError ? 'border-red-500' : 'border-gray-600'
+                    } group-hover:border-blue-400 p-3 shadow-lg focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50 transition-all duration-300`}
+                    required
+                  />
+                  <div className="absolute bottom-0 left-0 h-0.5 bg-gradient-to-r from-blue-400 to-purple-600 w-0 group-hover:w-full transition-all duration-500"></div>
+                </div>
                 {phoneError && (
-                  <p className="mt-1 text-xs text-red-500">{phoneError}</p>
+                  <p className="mt-1 text-xs text-red-400">{phoneError}</p>
                 )}
               </div>
 
-              <div className="relative">
-                <label className="flex items-center text-sm font-medium text-gray-700 mb-1">
+              {/* Обновить стили для остальных полей аналогично */}
+              <div className="relative group">
+                <label className="flex items-center text-sm font-medium text-gray-300 mb-2 group-hover:text-blue-400 transition-colors duration-300">
                   <Car className="w-4 h-4 mr-2" />
                   Марка автомобиля
                 </label>
@@ -362,7 +418,7 @@ function App() {
                   <select
                     value={formData.carBrand}
                     onChange={e => setFormData(prev => ({ ...prev, carBrand: e.target.value }))}
-                    className="block w-full rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2.5 appearance-none"
+                    className="block w-full bg-slate-800 bg-opacity-50 text-white rounded-xl border border-gray-600 group-hover:border-blue-400 p-3 shadow-lg focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50 transition-all duration-300 appearance-none"
                     required
                   >
                     <option value="">Выберите марку</option>
@@ -372,6 +428,7 @@ function App() {
                     <option value="other">Другое</option>
                   </select>
                   <ChevronDown className="absolute right-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <div className="absolute bottom-0 left-0 h-0.5 bg-gradient-to-r from-blue-400 to-purple-600 w-0 group-hover:w-full transition-all duration-500"></div>
                 </div>
                 {formData.carBrand === 'other' && (
                   <input
@@ -379,98 +436,222 @@ function App() {
                     value={formData.customBrand}
                     onChange={e => setFormData(prev => ({ ...prev, customBrand: e.target.value }))}
                     placeholder="Введите марку автомобиля"
-                    className="mt-2 block w-full rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2.5"
+                    className="mt-2 block w-full bg-slate-800 bg-opacity-50 text-white rounded-xl border border-gray-600 group-hover:border-blue-400 p-3 shadow-lg focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50 transition-all duration-300"
                     required
                   />
                 )}
               </div>
 
-              <div className="relative">
-                <label className="flex items-center text-sm font-medium text-gray-700 mb-1">
+              <div className="relative group">
+                <label className="flex items-center text-sm font-medium text-gray-300 mb-2 group-hover:text-blue-400 transition-colors duration-300">
                   <Car className="w-4 h-4 mr-2" />
                   Номер автомобиля (латинские буквы)
                 </label>
-                <input
-                  type="text"
-                  value={formData.carNumber}
-                  onChange={handleCarNumberChange}
-                  className={`block w-full rounded-md border ${
-                    carNumberError ? 'border-red-500' : 'border-gray-300'
-                  } shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2.5 uppercase`}
-                  placeholder="ABC123"
-                  required
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={formData.carNumber}
+                    onChange={handleCarNumberChange}
+                    className={`block w-full bg-slate-800 bg-opacity-50 text-white rounded-xl border ${
+                      carNumberError ? 'border-red-500' : 'border-gray-600'
+                    } group-hover:border-blue-400 p-3 shadow-lg focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50 transition-all duration-300 uppercase`}
+                    placeholder="ABC123"
+                    required
+                  />
+                  <div className="absolute bottom-0 left-0 h-0.5 bg-gradient-to-r from-blue-400 to-purple-600 w-0 group-hover:w-full transition-all duration-500"></div>
+                </div>
                 {carNumberError ? (
-                  <p className="mt-1 text-xs text-red-500">{carNumberError}</p>
+                  <p className="mt-1 text-xs text-red-400">{carNumberError}</p>
                 ) : (
-                  <p className="mt-1 text-xs text-gray-500">
+                  <p className="mt-1 text-xs text-gray-400">
                     Только латинские буквы (A-Z) и цифры (0-9)
                   </p>
                 )}
               </div>
 
-              <div className="relative">
-                <label className="flex items-center text-sm font-medium text-gray-700 mb-1">
+              <div className="relative group">
+                <label className="flex items-center text-sm font-medium text-gray-300 mb-2 group-hover:text-blue-400 transition-colors duration-300">
                   <Wrench className="w-4 h-4 mr-2" />
                   Пробег (км)
                 </label>
-                <input
-                  type="number"
-                  min="1"
-                  required
-                  value={formData.mileage}
-                  onChange={e => {
-                    setFormData(prev => ({ ...prev, mileage: e.target.value }));
-                    validateMileage(e.target.value);
-                  }}
-                  className={`block w-full rounded-md border ${
-                    mileageError ? 'border-red-500' : 'border-gray-300'
-                  } shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2.5`}
-                />
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={formData.mileage}
+                    onChange={e => {
+                      setFormData(prev => ({ ...prev, mileage: e.target.value }));
+                      validateMileage(e.target.value);
+                    }}
+                    className={`block w-full bg-slate-800 bg-opacity-50 text-white rounded-xl border ${
+                      mileageError ? 'border-red-500' : 'border-gray-600'
+                    } group-hover:border-blue-400 p-3 shadow-lg focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50 transition-all duration-300`}
+                  />
+                  <div className="absolute bottom-0 left-0 h-0.5 bg-gradient-to-r from-blue-400 to-purple-600 w-0 group-hover:w-full transition-all duration-500"></div>
+                </div>
                 {mileageError && (
-                  <p className="mt-1 text-xs text-red-500">{mileageError}</p>
+                  <p className="mt-1 text-xs text-red-400">{mileageError}</p>
                 )}
               </div>
 
-              <div className="relative">
-                <label className="flex items-center text-sm font-medium text-gray-700 mb-1">
-                  <Calendar className="w-4 h-4 mr-2" />
-                  Дата следующего ТО
+              <div className="relative group">
+                <label className="flex items-center text-sm font-medium text-gray-300 mb-2 group-hover:text-blue-400 transition-colors duration-300">
+                  <Wrench className="w-4 h-4 mr-2" />
+                  Текущий пробег (км)
                 </label>
-                <input
-                  type="date"
-                  required
-                  value={formData.nextServiceDate}
-                  onChange={e => setFormData(prev => ({ ...prev, nextServiceDate: e.target.value }))}
-                  className="block w-full rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2.5"
-                />
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={formData.current_mileage}
+                    onChange={e => {
+                      setFormData(prev => ({ ...prev, current_mileage: e.target.value }));
+                      validateMileage(e.target.value);
+                    }}
+                    className={`block w-full bg-slate-800 bg-opacity-50 text-white rounded-xl border ${
+                      mileageError ? 'border-red-500' : 'border-gray-600'
+                    } group-hover:border-blue-400 p-3 shadow-lg focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50 transition-all duration-300`}
+                  />
+                  <div className="absolute bottom-0 left-0 h-0.5 bg-gradient-to-r from-blue-400 to-purple-600 w-0 group-hover:w-full transition-all duration-500"></div>
+                </div>
+                {mileageError && (
+                  <p className="mt-1 text-xs text-red-400">{mileageError}</p>
+                )}
               </div>
 
-              <div className="relative sm:col-span-2">
-                <label className="flex items-center text-sm font-medium text-gray-700 mb-1">
+              <div className="relative group">
+                <label className="flex items-center text-sm font-medium text-gray-300 mb-2 group-hover:text-blue-400 transition-colors duration-300">
+                  <Calendar className="w-4 h-4 mr-2" />
+                  Дата последней замены масла
+                </label>
+                <div className="relative">
+                  <input
+                    type="date"
+                    value={formData.last_service_date}
+                    onChange={e => setFormData(prev => ({ ...prev, last_service_date: e.target.value }))}
+                    className="block w-full bg-slate-800 bg-opacity-50 text-white rounded-xl border border-gray-600 group-hover:border-blue-400 p-3 shadow-lg focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50 transition-all duration-300"
+                  />
+                  <div className="absolute bottom-0 left-0 h-0.5 bg-gradient-to-r from-blue-400 to-purple-600 w-0 group-hover:w-full transition-all duration-500"></div>
+                </div>
+              </div>
+
+              <div className="relative group">
+                <label className="flex items-center text-sm font-medium text-gray-300 mb-2 group-hover:text-blue-400 transition-colors duration-300">
+                  <Wrench className="w-4 h-4 mr-2" />
+                  Тип масла
+                </label>
+                <div className="relative">
+                  <select
+                    value={formData.oil_type}
+                    onChange={e => setFormData(prev => ({ ...prev, oil_type: e.target.value }))}
+                    className="block w-full bg-slate-800 bg-opacity-50 text-white rounded-xl border border-gray-600 group-hover:border-blue-400 p-3 shadow-lg focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50 transition-all duration-300"
+                  >
+                    <option value="">Выберите масло</option>
+                    {oilTypes.map(brand => (
+                      <optgroup key={brand.brand} label={brand.brand}>
+                        {brand.types.map(type => (
+                          <option key={`${brand.brand} ${type}`} value={`${brand.brand} ${type}`}>
+                            {type}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                    <option value="other">Другое</option>
+                  </select>
+                  <div className="absolute bottom-0 left-0 h-0.5 bg-gradient-to-r from-blue-400 to-purple-600 w-0 group-hover:w-full transition-all duration-500"></div>
+                </div>
+                {formData.oil_type === 'other' && (
+                  <input
+                    type="text"
+                    value={formData.customOilType || ''}
+                    onChange={e => setFormData(prev => ({ ...prev, oil_type: e.target.value }))}
+                    placeholder="Введите тип масла"
+                    className="mt-2 block w-full bg-slate-800 bg-opacity-50 text-white rounded-xl border border-gray-600 group-hover:border-blue-400 p-3 shadow-lg focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50 transition-all duration-300"
+                  />
+                )}
+              </div>
+
+              <div className="relative group">
+                <label className="flex items-center text-sm font-medium text-gray-300 mb-2 group-hover:text-blue-400 transition-colors duration-300">
+                  <Wrench className="w-4 h-4 mr-2" />
+                  Пробег на момент замены (км)
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="0"
+                    value={formData.last_service_mileage}
+                    onChange={e => setFormData(prev => ({ ...prev, last_service_mileage: e.target.value }))}
+                    className="block w-full bg-slate-800 bg-opacity-50 text-white rounded-xl border border-gray-600 group-hover:border-blue-400 p-3 shadow-lg focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50 transition-all duration-300"
+                  />
+                  <div className="absolute bottom-0 left-0 h-0.5 bg-gradient-to-r from-blue-400 to-purple-600 w-0 group-hover:w-full transition-all duration-500"></div>
+                </div>
+              </div>
+
+              <div className="relative group">
+                <label className="flex items-center text-sm font-medium text-gray-300 mb-2 group-hover:text-blue-400 transition-colors duration-300">
+                  <Wrench className="w-4 h-4 mr-2" />
+                  Рекомендованный интервал замены (км)
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="1000"
+                    value={formData.recommended_interval}
+                    onChange={e => setFormData(prev => ({ ...prev, recommended_interval: e.target.value }))}
+                    className="block w-full bg-slate-800 bg-opacity-50 text-white rounded-xl border border-gray-600 group-hover:border-blue-400 p-3 shadow-lg focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50 transition-all duration-300"
+                  />
+                  <div className="absolute bottom-0 left-0 h-0.5 bg-gradient-to-r from-blue-400 to-purple-600 w-0 group-hover:w-full transition-all duration-500"></div>
+                </div>
+              </div>
+
+              <div className="relative group">
+                <label className="flex items-center text-sm font-medium text-gray-300 mb-2 group-hover:text-blue-400 transition-colors duration-300">
+                  <Wrench className="w-4 h-4 mr-2" />
+                  Примечание мастера
+                </label>
+                <div className="relative">
+                  <textarea
+                    value={formData.master_notes}
+                    onChange={e => setFormData(prev => ({ ...prev, master_notes: e.target.value }))}
+                    className="block w-full bg-slate-800 bg-opacity-50 text-white rounded-xl border border-gray-600 group-hover:border-blue-400 p-3 shadow-lg focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50 transition-all duration-300"
+                    rows={3}
+                    placeholder="Дополнительные замечания мастера..."
+                  />
+                  <div className="absolute bottom-0 left-0 h-0.5 bg-gradient-to-r from-blue-400 to-purple-600 w-0 group-hover:w-full transition-all duration-500"></div>
+                </div>
+              </div>
+
+              <div className="relative group sm:col-span-2">
+                <label className="flex items-center text-sm font-medium text-gray-300 mb-2 group-hover:text-blue-400 transition-colors duration-300">
                   <Calendar className="w-4 h-4 mr-2" />
                   Желаемая дата ТО
                 </label>
-                <input
-                  type="date"
-                  min={new Date().toISOString().split('T')[0]}
-                  required
-                  value={formData.serviceDate}
-                  onChange={e => {
-                    setFormData(prev => ({ ...prev, serviceDate: e.target.value }));
-                    validateDates();
-                  }}
-                  className={`block w-full rounded-md border ${
-                    dateError ? 'border-red-500' : 'border-gray-300'
-                  } shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2.5`}
-                />
+                <div className="relative">
+                  <input
+                    type="date"
+                    min={new Date().toISOString().split('T')[0]}
+                    required
+                    value={formData.service_date}
+                    onChange={e => {
+                      setFormData(prev => ({ ...prev, service_date: e.target.value }));
+                      validateDates();
+                    }}
+                    className={`block w-full bg-slate-800 bg-opacity-50 text-white rounded-xl border ${
+                      dateError ? 'border-red-500' : 'border-gray-600'
+                    } group-hover:border-blue-400 p-3 shadow-lg focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50 transition-all duration-300`}
+                  />
+                  <div className="absolute bottom-0 left-0 h-0.5 bg-gradient-to-r from-blue-400 to-purple-600 w-0 group-hover:w-full transition-all duration-500"></div>
+                </div>
                 {dateError && (
-                  <p className="mt-1 text-xs text-red-500">{dateError}</p>
+                  <p className="mt-1 text-xs text-red-400">{dateError}</p>
                 )}
               </div>
 
-              <div className="relative sm:col-span-2">
-                <label className="flex items-center text-sm font-medium text-gray-700 mb-1">
+              <div className="relative group sm:col-span-2">
+                <label className="flex items-center text-sm font-medium text-gray-300 mb-2 group-hover:text-blue-400 transition-colors duration-300">
                   <Wrench className="w-4 h-4 mr-2" />
                   Виды работ
                 </label>
@@ -479,40 +660,45 @@ function App() {
                     <label key={option.value} className="flex items-center space-x-2">
                       <input
                         type="checkbox"
-                        checked={formData.workTypes.includes(option.value)}
+                        checked={formData.work_types.includes(option.value)}
                         onChange={() => handleWorkTypeChange(option.value)}
-                        className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50"
+                        className="rounded border-gray-600 text-blue-500 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50"
                       />
-                      <span className="text-sm text-gray-700">{option.label}</span>
+                      <span className="text-sm text-gray-300">{option.label}</span>
                     </label>
                   ))}
                 </div>
                 <div className="mt-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-300 mb-2 group-hover:text-blue-400 transition-colors duration-300">
                     Дополнительные работы
                   </label>
-                  <textarea
-                    value={formData.additionalWork}
-                    onChange={e => setFormData(prev => ({ ...prev, additionalWork: e.target.value }))}
-                    className="block w-full rounded-md border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2.5"
-                    rows={3}
-                    placeholder="Опишите дополнительные работы..."
-                  />
+                  <div className="relative">
+                    <textarea
+                      value={formData.additional_work}
+                      onChange={e => setFormData(prev => ({ ...prev, additional_work: e.target.value }))}
+                      className="block w-full bg-slate-800 bg-opacity-50 text-white rounded-xl border border-gray-600 group-hover:border-blue-400 p-3 shadow-lg focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50 transition-all duration-300"
+                      rows={3}
+                      placeholder="Опишите дополнительные работы..."
+                    />
+                    <div className="absolute bottom-0 left-0 h-0.5 bg-gradient-to-r from-blue-400 to-purple-600 w-0 group-hover:w-full transition-all duration-500"></div>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div className="pt-4">
+            <div className="pt-4 sm:col-span-2">
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className={`w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white ${
-                  isSubmitting ? 'bg-blue-400' : 'bg-blue-600 hover:bg-blue-700'
-                } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200`}
+                className={`w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-lg text-sm font-medium text-white ${
+                  isSubmitting 
+                    ? 'bg-blue-600 bg-opacity-50' 
+                    : 'bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700'
+                } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-300`}
               >
                 {isSubmitting ? 'Отправка...' : 'Отправить'}
               </button>
-              <p className="mt-2 text-xs text-gray-500 text-center">
+              <p className="mt-2 text-xs text-gray-400 text-center">
                 Нажимая кнопку 'Отправить', я даю согласие на обработку персональных данных
               </p>
             </div>
