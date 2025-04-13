@@ -4,9 +4,17 @@ import { InputMask } from '@react-input/mask';
 import { createClient } from '@supabase/supabase-js';
 import { oilTypes } from './data/oilTypes';
 
+// Проверка наличия переменных окружения
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseKey) {
+  console.error('Ошибка: Переменные окружения VITE_SUPABASE_URL и VITE_SUPABASE_ANON_KEY должны быть определены');
+}
+
 const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
+  supabaseUrl,
+  supabaseKey
 );
 
 // Функция для преобразования русских букв в латинские аналоги
